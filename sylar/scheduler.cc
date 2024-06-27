@@ -146,6 +146,7 @@ void Scheduler::run() {
 
     FiberAndThread ft;
     while(true) {
+        // 领任务来了。
         ft.reset();
         bool tickle_me = false;
         bool is_active = false;
@@ -153,20 +154,22 @@ void Scheduler::run() {
             MutexType::Lock lock(m_mutex);
             auto it = m_fibers.begin();
             while(it != m_fibers.end()) {
+                // 人家自己指定了要执行的线程 id，所以跳过
                 if(it->thread != -1 && it->thread != sylar::GetThreadId()) {
                     ++it;
                     tickle_me = true;
                     continue;
                 }
-
+                // 既然是我可以执行的，一定会有协程或回调函数，本质上都是任务。
                 SYLAR_ASSERT(it->fiber || it->cb);
+                // 已经处于执行状态，跳过
                 if(it->fiber && it->fiber->getState() == Fiber::EXEC) {
                     ++it;
                     continue;
                 }
-
+                // 下面就是取任务了
                 ft = *it;
-                m_fibers.erase(it++);
+                m_fibers.erase(it++); // 这个就是为什么不用 vec 而用 list，因为防止迭代器失效
                 ++m_activeThreadCount;
                 is_active = true;
                 break;
@@ -181,6 +184,7 @@ void Scheduler::run() {
         if(ft.fiber && (ft.fiber->getState() != Fiber::TERM
                         && ft.fiber->getState() != Fiber::EXCEPT)) {
             ft.fiber->swapIn();
+            // 来到这里说明上面的任务执行告一段落，所以线程又空闲了。
             --m_activeThreadCount;
 
             if(ft.fiber->getState() == Fiber::READY) {
